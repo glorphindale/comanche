@@ -7,4 +7,5 @@
                  [com.rmoquin.bundle/jeromq "0.2.0"]
                  [org.clojure/tools.logging "0.2.6"]
                  [com.taoensso/timbre "2.3.0"] 
-                 ])
+                 ]
+  :main comanche.core)
