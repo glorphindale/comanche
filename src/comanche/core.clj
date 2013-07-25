@@ -14,6 +14,8 @@
    {:id id :state state :location (str "tcp://127.0.0.1:900" id)}))
 
 (def N 3)
+(def NODE-TIMEOUT 5000)
+(def NETWORK-TIMEOUT 4000)
 
 (def nodes
   (assoc
@@ -22,60 +24,74 @@
 
 (def ctx (ZMQ/context 1))
 
-(def TIMEOUT 4000)
 
 (defn transition [in-msg]
   (case in-msg
     "PING" "PONG"
+    "ALIVE?" "FINETHANKS"
     "WAT?"))
 
-(defn find-king [node-map]
-  (val (first (filter (fn [[_ v]] (= :king (:state v))) node-map))))
+(defn find-king [cluster]
+  (val (first (filter (fn [[_ v]] (= :king (:state v))) (:cluster cluster)))))
 
-(defn send-ping [king-node]
+(defn split-cluster [nodes me-id]
+  {:me (nodes me-id)
+   :cluster (select-keys nodes
+                         (disj (set (keys nodes)) me-id))})
+
+(defn send-msg-and-expect [node in-msg expected-msg]
   (try
+    (info (str "send-msg-and-expect called to node " node))
     (let [s (.socket ctx ZMQ/REQ)]
-      (.setReceiveTimeOut s TIMEOUT)
-      (.setSendTimeOut s TIMEOUT)
-      (.connect s (:location king-node))
-      (.send s "PING")
-      (let [msg (String. (.recvStr s))]
-        (if (not= "PONG" msg)
+      (.setReceiveTimeOut s NETWORK-TIMEOUT)
+      (.setSendTimeOut s NETWORK-TIMEOUT)
+      (.connect s (:location node))
+      (info "connected")
+      (.send s in-msg)
+      (info "sent")
+      (let [out-msg (String. (.recvStr s))]
+        (info "received")
+        (if (not= expected-msg out-msg)
           :failure
           :ok)))
     (catch Exception e (do
-                         (info (str "PING failed: caught exc " e))
+                         (info (str in-msg " failed: caught exc " e))
                          :failure))))
 
-(defn handler [node-map id]
-  (fn []
-    (let [me (node-map id)
-          {:keys [id state]} me
-          port (:location me)
-          s (.socket ctx ZMQ/REP)]
-      (if (= state :king)
-        (try
-          (info (str "king node listening" ))
-          (.bind s port)
-          (.setSendTimeOut s TIMEOUT)
-          (loop [msg (.recvStr s)]
-            (info (str "node " id " received message " msg))
-            (.send s (transition msg))
-            (recur (.recvStr s)))
-          (catch Exception e (info (str "Node : Caught exc " e))))
-        (while true
-          (do
-            (info (str "Received " (send-ping (find-king node-map)) " when pinging king node"))
-            (Thread/sleep 5000)))))))
+(defn listening-handler [cluster]
+  (let [{:keys [id location]} (:me @cluster)
+        s (.socket ctx ZMQ/REP)]
+    (try
+      (info (str "node " id " listening"))
+      (.bind s location)
+      (.setSendTimeOut s NETWORK-TIMEOUT)
+      (loop [msg (.recvStr s)]
+        (info (str "node " id " received message " msg))
+        (.send s (transition msg))
+        (recur (.recvStr s)))
+      (catch Exception e (info (str "Node " id ": Caught exc " e))))))
 
-(defn get-handlers []
-  (map #(future-call (handler nodes (:id %))) (vals nodes)))
+(defn outbound-handler [cluster]
+  (info (str "Launching outbound handler"))
+  (while true
+    (let [me (:me @cluster)
+          king (find-king @cluster)
+          id (:id me)
+          state (:state me)]
+      (if (= state :king)
+        (info (str "Node " id " is a king, sleeping"))
+        (info "received" (send-msg-and-expect king "PING" "PONG"))))
+    (Thread/sleep NODE-TIMEOUT)
+    (info "Starting new while"))) 
 
 (defn -main [& args]
   (let [args (set args)
         id (Integer. (first args))]
     (if (nil? id)
       (throw "Provide node id")
-      (let [h (future-call (handler nodes id))]
-        (info "Waiting for future to end")
-        @h))))
+      (let [parted-nodes (split-cluster nodes id)
+            cluster (atom parted-nodes)
+            inbound (future (listening-handler cluster))
+            outbound (future (outbound-handler cluster))]
+        (info "Waiting for futures to end")
+        @inbound))))
