@@ -8,4 +8,4 @@
                  [org.clojure/tools.logging "0.2.6"]
                  [com.taoensso/timbre "2.3.0"] 
                  ]
-  :main comanche.core)
+  :main comanche.draft)
