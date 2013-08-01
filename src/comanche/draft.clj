@@ -6,6 +6,7 @@
 
 (timbre/set-config! [:appenders :spit :enabled?] true)
 (timbre/set-config! [:shared-appender-config :spit-filename] "logs.log")
+(timbre/set-config! [:current-level] :info)
 
 (def T 1000)
 (def N 8)
@@ -25,18 +26,18 @@
   (try
     (let [s (.socket ctx ZMQ/REQ)
           target (:location (cluster target-id))]
-      #_(info "Node" my-id ":" "Sending msg " msg " from " my-id " to " target-id ": " target)
+      (debug "Node" my-id ":" "Sending msg " msg " from " my-id " to " target-id ": " target)
       (.setReceiveTimeOut s T)
       (.setSendTimeOut s T)
       (.connect s target)
-      #_(info "Node" my-id ":" "connected")
+      (debug "Node" my-id ":" "connected")
       (.send s msg)
-      #_(info "Node" my-id ":" "sent")
+      (debug "Node" my-id ":" "sent")
       (let [response (String. (.recvStr s))]
-        #_(info "Node" my-id ":" "Received" response)
+        (debug "Node" my-id ":" "Received" response)
         response))
     (catch Exception e (do
-                         (info "Node" my-id ":" "Exception when sending message " msg "to" target-id ":" e)
+                         (debug "Node" my-id ":" "Exception when sending message " msg "to" target-id ":" e)
                          :failure))))
 (defn make-msg [id msg]
   (str id ":" msg))
@@ -48,7 +49,7 @@
 
 ; Transport layer
 (defn send-msg-and-expect [my-id target-id in-msg out-msg]
-  #_(info "Node" my-id ":" "send-msg-and-expect")
+  (debug "Node" my-id ":" "send-msg-and-expect")
   (let [msg (make-msg my-id in-msg)
         exp-msg (make-msg target-id out-msg)
         response (send-msg my-id target-id msg)]
@@ -60,25 +61,25 @@
 
 ; TODO should use 4*T timeout
 (defn ping-king [my-id king-id]
-  #_(info "Node" my-id ":" "In ping king")
+  (debug "Node" my-id ":" "In ping king")
   (send-msg-and-expect my-id king-id "PING" "PONG"))
 
 (defn send-alive [my-id target-id]
-  #_(info "Node" my-id ":" "Send alive" my-id ":" target-id)
+  (debug "Node" my-id ":" "Send alive" my-id ":" target-id)
   (send-msg my-id target-id (make-msg my-id "ALIVE?")))
 
 (defn send-king [my-id target-id]
   (send-msg-and-expect my-id target-id "IMTHEKING" "OK"))
 
 (defn broadcast-alive [my-id]
-  #_(info "Node" my-id ":" "Broadcast alive")
+  (debug "Node" my-id ":" "Broadcast alive")
   (let [older-nodes (second (split-cluster my-id))]
     (vec (map
          (fn [older-node] (send-alive my-id (:id older-node)))
          older-nodes))))
 
 (defn broadcast-king [my-id]
-  #_(info "Node" my-id ":" "Broadcasting kingness")
+  (debug "Node" my-id ":" "Broadcasting kingness")
   (future 
     (let [younger-nodes (first (split-cluster my-id))]
       (vec (map
@@ -109,10 +110,10 @@
 
 ; Meta description
 (defn ping [knowledge my-id]
-  #_(info "Node" my-id ":" "PING")
+  (debug "Node" my-id ":" "PING")
   (if-let [king-id (find-king! knowledge)]
     (let [response (ping-king my-id king-id)]
-      #_(info "Node" my-id ":" king-id "response is " response)  
+      (debug "Node" my-id ":" king-id "response is " response)  
       (if (= response :failure)
         (king-lost! knowledge)))))
 
@@ -172,14 +173,14 @@
   (let [location (get-in cluster [my-id :location])
         sock (.socket ctx ZMQ/REP)]
     (try
-      #_(info "Node" my-id ":" "Starting receive-loop")
+      (debug "Node" my-id ":" "Starting receive-loop")
       (.bind sock location)
       (.setSendTimeOut sock T)
       (loop [in-msg (.recvStr sock)]
-        #_(info "Node" my-id ":" "Received" in-msg)
+        (debug "Node" my-id ":" "Received" in-msg)
         (let [response (transition knowledge my-id in-msg)
               out-msg (str my-id ":" response)]
-          #_(info "Node" my-id ":" "Sending out" out-msg)
+          (debug "Node" my-id ":" "Sending out" out-msg)
           (.send sock out-msg))
         (recur (.recvStr sock)))
       (catch Exception e nil))))
@@ -199,5 +200,5 @@
       (println "Node ids should be between 0 and" (dec (count cluster)))
       (let [nodes (map node-march ids)
             waiting-for (first (first nodes))]
-        (info nodes) ; Race condition, without this line second node does not start
+        (doall nodes)
         @waiting-for))))
