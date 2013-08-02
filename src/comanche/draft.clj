@@ -1,25 +1,31 @@
 (ns comanche.draft
   (:require [taoensso.timbre :as timbre
-              :refer (trace debug info warn error fatal spy with-log-level)] ; TODO drop unneeded
-            [clojure.string :refer (split)])
+              :refer (debug info)]
+            [clojure.string :refer (split)]
+            [clojure.edn :as edn])
   (:import [org.jeromq ZMQ]))
 
 (timbre/set-config! [:appenders :spit :enabled?] true)
 (timbre/set-config! [:shared-appender-config :spit-filename] "logs.log")
 (timbre/set-config! [:current-level] :info)
 
-(def T 1000)
-(def N 8)
+(def T 4000)
 (def ctx (ZMQ/context 1))
 
+; Cluster generation
 (defn get-location [id]
-  (str "tcp://127.0.0.1:900" id))
+  (let [sid (+ 9000 id)]
+    (str "tcp://127.0.0.1:" sid)))
 
 (defn new-node [id]
   {:id id :location (get-location id)})
 
+(defn gen-new-cluster [size]
+  (vec (map new-node (range 0 size))))
+
+;
 (def cluster
-  (vec (map new-node (range 0 N))))
+  (edn/read-string (slurp "cluster.conf")))
 
 ; Transmission layer
 (defn send-msg [my-id target-id msg]
@@ -80,7 +86,7 @@
 
 (defn broadcast-king [my-id]
   (debug "Node" my-id ":" "Broadcasting kingness")
-  (future 
+  (future
     (let [younger-nodes (first (split-cluster my-id))]
       (vec (map
              (fn [younger-node] (send-king my-id (:id younger-node)))
@@ -113,7 +119,7 @@
   (debug "Node" my-id ":" "PING")
   (if-let [king-id (find-king! knowledge)]
     (let [response (ping-king my-id king-id)]
-      (debug "Node" my-id ":" king-id "response is " response)  
+      (debug "Node" my-id ":" king-id "response is " response)
       (if (= response :failure)
         (king-lost! knowledge)))))
 
@@ -123,7 +129,7 @@
   (let [broadcast-results (broadcast-alive my-id)
         finethanks (dig-broadcast broadcast-results "FINETHANKS")
         imtheking (dig-broadcast broadcast-results "IMTHEKING")]
-    (debug "Node" my-id ":" "Finethanks:" finethanks (empty? finethanks) "imtheking:" imtheking (first imtheking))
+    (debug "Node" my-id ":" "Finethanks:" finethanks "imtheking:" imtheking)
     (cond (not-empty imtheking) (do
                                   (change-state! knowledge :stable)
                                   (king-found! knowledge (first imtheking)))
@@ -131,7 +137,7 @@
                                 (broadcast-king my-id)
                                 (change-state! knowledge :king))
           (not-empty finethanks) (do
-                                   (Thread/sleep T)) ; TODO Is this approach correct?
+                                   (Thread/sleep T))
           :else (debug "Node" my-id ":" "Election-cycle failed"))))
 
 (defn election [knowledge my-id]
@@ -143,8 +149,8 @@
     (do
       (info "Node" my-id ":" @knowledge)
       (let [state (:state @knowledge)]
-        (cond (= :election state) (election knowledge my-id) 
-              (= :stable state) (ping knowledge my-id) 
+        (cond (= :election state) (election knowledge my-id)
+              (= :stable state) (ping knowledge my-id)
               :else true)))
       (Thread/sleep T)))
 
@@ -152,7 +158,7 @@
 (defn transition [knowledge my-id in-msg]
   (let [[sender-id msg] (split-msg in-msg)]
     (cond
-      (= msg "PING") "PONG" ; Do we need to check for kingness?
+      (= msg "PING") "PONG"
       (= msg "IMTHEKING") (do
                             (king-found! knowledge sender-id)
                             (change-state! knowledge :stable)
@@ -201,4 +207,5 @@
       (let [nodes (map node-march ids)
             waiting-for (first (first nodes))]
         (doall nodes)
-        @waiting-for))))
+        @waiting-for)))
+  (shutdown-agents))
