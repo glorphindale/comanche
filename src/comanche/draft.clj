@@ -1,6 +1,6 @@
 (ns comanche.draft
   (:require [taoensso.timbre :as timbre
-              :refer (debug info)]
+              :refer (debug info error)]
             [clojure.string :as string]
             [clojure.edn :as edn])
   (:import [org.jeromq ZMQ]))
@@ -9,7 +9,7 @@
 (timbre/set-config! [:shared-appender-config :spit-filename] "logs.log")
 (timbre/set-config! [:current-level] :info)
 
-(def T 4000)
+(def T 1000)
 (def ctx (ZMQ/context 1))
 
 ; Cluster generation
@@ -34,22 +34,18 @@
   ([my-id target-id msg]
    (send-msg my-id target-id msg T))
   ([my-id target-id msg timeout]
-   (try
-     (let [s (.socket ctx ZMQ/REQ)
-           target (:location (cluster target-id))]
-       (debug "Node" my-id ":" "Sending msg " msg " from " my-id " to " target-id ": " target)
-       (.setReceiveTimeOut s timeout)
-       (.setSendTimeOut s timeout)
-       (.connect s target)
-       (debug "Node" my-id ":" "connected")
-       (.send s msg)
-       (debug "Node" my-id ":" "sent")
-       (let [response (String. (.recvStr s))]
-         (debug "Node" my-id ":" "Received" response)
-         response))
-     (catch Exception e :failure #_(do
-                          (debug "Node" my-id ":" "Exception when sending message " msg "to" target-id ":" e)
-                          :failure)))))
+   (let [target (:location (cluster target-id))]
+     (debug "Node" my-id ":" "Sending msg " msg " from " my-id " to " target-id ": " target)
+     (try
+       (with-open [sock (.socket ctx ZMQ/REQ)]
+         (.setReceiveTimeOut sock timeout)
+         (.setSendTimeOut sock timeout)
+         (.connect sock target)
+         (.send sock msg)
+         (String. (.recvStr sock)))
+       (catch Exception e :failure #_(do
+                                       (error "Node" my-id ":" "Exception when sending message " msg "to" target-id ":" e)
+                                       :failure))))))
 (defn make-msg [id msg]
   (str id ":" msg))
 
@@ -68,7 +64,9 @@
          exp-msg (make-msg target-id out-msg)
          response (send-msg my-id target-id msg timeout)]
      (cond (= response exp-msg) :ok
-           :else :failure))))
+           :else (do
+                   (info "Node" my-id ": Received" response "when waiting for" exp-msg)
+                   :failure)))))
 
 (defn split-cluster [pivot]
   [(subvec cluster 0 pivot) (subvec cluster (inc pivot))])
@@ -197,6 +195,7 @@
       (= msg "EXIT!") (exit! knowledge)
       :else "WAT?")))
 
+; TODO kinda ugly function, should be refactored
 (defn receive-loop [knowledge my-id]
   (let [location (get-in cluster [my-id :location])
         sock (.socket ctx ZMQ/REP)]
@@ -218,7 +217,7 @@
   (let [knowledge (atom {:state :election :king nil})
         inbound (future (receive-loop knowledge id))
         outbound (future (state-loop knowledge id))]
-    (info "started node" id)
+    (info "Started node" id)
     [knowledge inbound outbound]))
 
 (defn get-ids [args]
