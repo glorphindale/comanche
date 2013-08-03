@@ -9,7 +9,7 @@
 (timbre/set-config! [:shared-appender-config :spit-filename] "logs.log")
 (timbre/set-config! [:current-level] :info)
 
-(def T 1000)
+(def T 4000)
 (def ctx (ZMQ/context 1))
 
 ; Cluster generation
@@ -98,6 +98,15 @@
            (fn [younger-node] (future (send-king my-id (:id younger-node))))
            younger-nodes))))
 
+(defn dig-broadcast [received searchee]
+  "Take result of broadcast and return ids of nodes, that replied with searchee"
+  (->> received
+       (map deref)
+       (filter #(not= % :failure))
+       (map split-msg)
+       (filter (fn [[_ msg]] (= msg searchee)))
+       (map (fn [[id _]] id))))
+
 ; State management
 (defn who-king? [knowledge]
   (:king @knowledge))
@@ -126,16 +135,7 @@
 (defn king-lost! [knowledge]
   (reset! knowledge {:king nil :state :election}))
 
-(defn dig-broadcast [received searchee]
-  "Take result of broadcast and return ids of nodes, that replied with searchee"
-  (->> received
-       (map deref)
-       (filter #(not= % :failure))
-       (map split-msg)
-       (filter (fn [[_ msg]] (= msg searchee)))
-       (map (fn [[id _]] id))))
-
-; Meta description
+; Sending handler
 (defn ping [knowledge my-id]
   (debug "Node" my-id ":" "PING")
   (if-let [king-id (who-king? knowledge)]
@@ -144,7 +144,6 @@
       (if (= response :failure)
         (king-lost! knowledge)))))
 
-; Sending handler
 (defn election-cycle [knowledge my-id]
   (debug "Node" my-id ":" "new election cycle")
   (let [broadcast-results (broadcast-alive my-id)
@@ -195,8 +194,8 @@
       (= msg "EXIT!") (exit! knowledge)
       :else "WAT?")))
 
-; TODO kinda ugly function, should be refactored
 (defn receive-loop [knowledge my-id]
+  ; TODO kinda ugly function, should be refactored
   (let [location (get-in cluster [my-id :location])
         sock (.socket ctx ZMQ/REP)]
     (try
@@ -213,6 +212,7 @@
           (recur (.recvStr sock))))
       (catch Exception e (debug "Node" my-id ": Caught exception" e)))))
 
+; Glue them all
 (defn launch-node [id]
   (let [knowledge (atom {:state :election :king nil})
         inbound (future (receive-loop knowledge id))
