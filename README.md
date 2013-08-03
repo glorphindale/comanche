@@ -1,6 +1,7 @@
 # comanche
 
-Comanche tribe need a new leader.
+Comanche tribe needs a new leader.
+Условия задания можно прочитать [на сайте Echo|http://www.echorussia.ru/jobs/serverside-june-2013.html]
 
 ## Usage
 
@@ -9,14 +10,12 @@ Comanche tribe need a new leader.
   сообщений. Проблема - таймауты, решить через core.async?
 * над send-msg нужна нахлобучка, которая абстрагирует идентификаторы от транспорта
 * поставить лимиты на сокеты в 1 сообщение
-* сохранить все фьючеры в ref, чтобы потом управлять узлами через REPL
-* shutdown-agents
 * handle ctrl-c
 * добавить состояние :exit для вывода узлов
 * добавить эмуляцию медленных узлов
 * защита рабочих потоков от исключений
 ## License
 
-Copyright © 2013 FIXME
+Copyright © 2013 glorphindale
 
 Distributed under the Eclipse Public License, the same as Clojure.

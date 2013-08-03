@@ -1,7 +1,7 @@
 (ns comanche.draft
   (:require [taoensso.timbre :as timbre
               :refer (debug info)]
-            [clojure.string :refer (split)]
+            [clojure.string :as string]
             [clojure.edn :as edn])
   (:import [org.jeromq ZMQ]))
 
@@ -29,7 +29,8 @@
 
 ; Transmission layer
 (defn send-msg
-  "Msg must be in number:message format"
+  "Connect to a specified node, send message and read a response.
+  Msg must be in a number:message format"
   ([my-id target-id msg]
    (send-msg my-id target-id msg T))
   ([my-id target-id msg timeout]
@@ -53,7 +54,7 @@
   (str id ":" msg))
 
 (defn split-msg [msg]
-  (let [[id text] (split msg #":")
+  (let [[id text] (string/split msg #":")
         out-id (Integer. id)]
     [out-id text]))
 
@@ -84,6 +85,7 @@
   (send-msg-and-expect my-id target-id "IMTHEKING" "OK"))
 
 (defn broadcast-alive [my-id]
+  "Send ALIVE? requests in a futures and return them"
   (debug "Node" my-id ":" "Broadcast alive")
   (let [older-nodes (second (split-cluster my-id))]
     (vec (map
@@ -91,6 +93,7 @@
          older-nodes))))
 
 (defn broadcast-king [my-id]
+  "Send IMTHEKING requests in a futures and return them"
   (debug "Node" my-id ":" "Broadcasting kingness")
   (let [younger-nodes (first (split-cluster my-id))]
     (vec (map
@@ -101,15 +104,14 @@
 (defn find-king! [knowledge]
   (:king @knowledge))
 
-(defn change-state! [knowledge state]
-  (swap! knowledge assoc :state state))
+(defn king-me! [knowledge]
+  (reset! knowledge {:king nil :state :king}))
 
 (defn king-found! [knowledge king-id]
-  (swap! knowledge assoc :king king-id))
+  (reset! knowledge {:king king-id :state :stable}))
 
 (defn king-lost! [knowledge]
-  (swap! knowledge assoc :king nil)
-  (change-state! knowledge :election))
+  (reset! knowledge {:king nil :state :election}))
 
 (defn dig-broadcast [received searchee]
   "Take result of broadcast and return ids of nodes, that replied with searchee"
@@ -136,12 +138,10 @@
         finethanks (dig-broadcast broadcast-results "FINETHANKS")
         imtheking (dig-broadcast broadcast-results "IMTHEKING")]
     (debug "Node" my-id ":" "Finethanks:" finethanks "imtheking:" imtheking)
-    (cond (not-empty imtheking) (do
-                                  (change-state! knowledge :stable)
-                                  (king-found! knowledge (first imtheking)))
+    (cond (not-empty imtheking) (king-found! knowledge (first imtheking))
           (empty? finethanks) (do
                                 (broadcast-king my-id)
-                                (change-state! knowledge :king))
+                                (king-me! knowledge))
           (not-empty finethanks) (do
                                    (Thread/sleep T))
           :else (debug "Node" my-id ":" "Election-cycle failed"))))
@@ -168,17 +168,16 @@
       (= msg "PING") "PONG"
       (= msg "IMTHEKING") (do
                             (king-found! knowledge sender-id)
-                            (change-state! knowledge :stable)
                             "OK")
       (and (= msg "ALIVE?")
            (= :king (:state @knowledge))) "IMTHEKING"
       (and (= msg "ALIVE?")
            (= my-id (dec (count cluster)))) (do
-                                        (change-state! knowledge :king)
+                                        (king-me! knowledge)
                                         (broadcast-king my-id)
                                         "IMTHEKING")
       (= msg "ALIVE?") (do
-                         (change-state! knowledge :election)
+                         (king-lost! knowledge)
                          "FINETHANKS")
       (= msg "REPORT!") @knowledge
       :else "WAT?")))
@@ -199,21 +198,30 @@
         (recur (.recvStr sock)))
       (catch Exception e (debug "Node" my-id ": Caught exception" e)))))
 
-(defn node-march [id]
+(defn launch-node [id]
   (let [knowledge (atom {:state :election :king nil})
         inbound (future (receive-loop knowledge id))
         outbound (future (state-loop knowledge id))]
     (info "started node" id)
-    [inbound outbound]))
+    [knowledge inbound outbound]))
+
+(defn get-ids [args]
+  "Return a seq of node IDs to start"
+  (cond (empty? args) nil
+        (some #{"-f"} args) (range (count cluster))
+        (and (= (count args) 1) (re-find #"-" (first args)))
+          (let [[start stop] (map #(Integer. %) (string/split (first args) #"-"))] (range start (inc stop)))
+        (every? #(< -1 (Integer. %) (count cluster)) args) (map #(Integer. %) args)
+        :else nil))
 
 (defn -main [& args]
-  (let [args (set args)
-        ids (map #(Integer. %) args)]
-    (if (or (empty? ids)
-            (not (every? #(< -1 % (count cluster)) ids)))
-      (println "Node ids should be between 0 and" (dec (count cluster)))
-      (let [nodes (map node-march ids)
-            waiting-for (first (first nodes))]
-        (doall nodes)
-        @waiting-for)))
+  (let [args (set args)]
+    (if-let [ids (get-ids args)]
+      (do
+        (info "Starting nodes" ids)
+        (let [nodes (map launch-node ids)
+              waiting-for (second (first nodes))]
+          (doall nodes)
+          @waiting-for)) ; TODO wait for all the nodes
+      (info "Usage: run with '-f' for full cluster emulation, with 'id1 id2 ... idk' for specific set of nodes, or with 'id1-idN' for a range of nodes. Ids should be between 0 and" (dec (count cluster)) ".")))
   (shutdown-agents))
