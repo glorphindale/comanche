@@ -113,6 +113,12 @@
 (defn stability? [knowledge]
   (= :stable (:state @knowledge)))
 
+(defn exit? [knowledge]
+  (= :exit (:state @knowledge)))
+
+(defn exit! [knowledge]
+  (reset! knowledge {:king nil :state :exit}))
+
 (defn king-me! [knowledge]
   (reset! knowledge {:king nil :state :king}))
 
@@ -160,7 +166,7 @@
     (election-cycle knowledge my-id)))
 
 (defn state-loop [knowledge my-id]
-  (while true
+  (while (not (exit? knowledge))
     (do
       (info "Node" my-id ":" @knowledge)
       (cond (no-king? knowledge) (election knowledge my-id)
@@ -188,6 +194,7 @@
                          (king-lost! knowledge)
                          "FINETHANKS")
       (= msg "REPORT!") @knowledge
+      (= msg "EXIT!") (exit! knowledge)
       :else "WAT?")))
 
 (defn receive-loop [knowledge my-id]
@@ -203,7 +210,8 @@
               out-msg (str my-id ":" response)]
           (debug "Node" my-id ":" "Sending out" out-msg)
           (.send sock out-msg))
-        (recur (.recvStr sock)))
+        (if (not (exit? knowledge))
+          (recur (.recvStr sock))))
       (catch Exception e (debug "Node" my-id ": Caught exception" e)))))
 
 (defn launch-node [id]
