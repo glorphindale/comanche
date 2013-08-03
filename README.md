@@ -13,6 +13,8 @@ Comanche tribe need a new leader.
 * shutdown-agents
 * handle ctrl-c
 * добавить состояние :exit для вывода узлов
+* добавить эмуляцию медленных узлов
+* защита рабочих потоков от исключений
 ## License
 
 Copyright © 2013 FIXME

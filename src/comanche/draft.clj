@@ -28,23 +28,27 @@
   (edn/read-string (slurp "cluster.conf")))
 
 ; Transmission layer
-(defn send-msg [my-id target-id msg]
-  (try
-    (let [s (.socket ctx ZMQ/REQ)
-          target (:location (cluster target-id))]
-      (debug "Node" my-id ":" "Sending msg " msg " from " my-id " to " target-id ": " target)
-      (.setReceiveTimeOut s T)
-      (.setSendTimeOut s T)
-      (.connect s target)
-      (debug "Node" my-id ":" "connected")
-      (.send s msg)
-      (debug "Node" my-id ":" "sent")
-      (let [response (String. (.recvStr s))]
-        (debug "Node" my-id ":" "Received" response)
-        response))
-    (catch Exception e (do
-                         (debug "Node" my-id ":" "Exception when sending message " msg "to" target-id ":" e)
-                         :failure))))
+(defn send-msg
+  "Msg must be in number:message format"
+  ([my-id target-id msg]
+   (send-msg my-id target-id msg T))
+  ([my-id target-id msg timeout]
+   (try
+     (let [s (.socket ctx ZMQ/REQ)
+           target (:location (cluster target-id))]
+       (debug "Node" my-id ":" "Sending msg " msg " from " my-id " to " target-id ": " target)
+       (.setReceiveTimeOut s timeout)
+       (.setSendTimeOut s timeout)
+       (.connect s target)
+       (debug "Node" my-id ":" "connected")
+       (.send s msg)
+       (debug "Node" my-id ":" "sent")
+       (let [response (String. (.recvStr s))]
+         (debug "Node" my-id ":" "Received" response)
+         response))
+     (catch Exception e :failure #_(do
+                          (debug "Node" my-id ":" "Exception when sending message " msg "to" target-id ":" e)
+                          :failure)))))
 (defn make-msg [id msg]
   (str id ":" msg))
 
@@ -54,21 +58,23 @@
     [out-id text]))
 
 ; Transport layer
-(defn send-msg-and-expect [my-id target-id in-msg out-msg]
-  (debug "Node" my-id ":" "send-msg-and-expect")
-  (let [msg (make-msg my-id in-msg)
-        exp-msg (make-msg target-id out-msg)
-        response (send-msg my-id target-id msg)]
-    (cond (= response exp-msg) :ok
-          :else :failure)))
+(defn send-msg-and-expect
+  ([my-id target-id in-msg out-msg]
+   (send-msg-and-expect my-id target-id in-msg out-msg T))
+  ([my-id target-id in-msg out-msg timeout]
+   (debug "Node" my-id ":" "send-msg-and-expect")
+   (let [msg (make-msg my-id in-msg)
+         exp-msg (make-msg target-id out-msg)
+         response (send-msg my-id target-id msg timeout)]
+     (cond (= response exp-msg) :ok
+           :else :failure))))
 
 (defn split-cluster [pivot]
   [(subvec cluster 0 pivot) (subvec cluster (inc pivot))])
 
-; TODO should use 4*T timeout
 (defn ping-king [my-id king-id]
   (debug "Node" my-id ":" "In ping king")
-  (send-msg-and-expect my-id king-id "PING" "PONG"))
+  (send-msg-and-expect my-id king-id "PING" "PONG" (* 4 T)))
 
 (defn send-alive [my-id target-id]
   (debug "Node" my-id ":" "Send alive" my-id ":" target-id)
@@ -81,16 +87,15 @@
   (debug "Node" my-id ":" "Broadcast alive")
   (let [older-nodes (second (split-cluster my-id))]
     (vec (map
-         (fn [older-node] (send-alive my-id (:id older-node)))
+         (fn [older-node] (future (send-alive my-id (:id older-node))))
          older-nodes))))
 
 (defn broadcast-king [my-id]
   (debug "Node" my-id ":" "Broadcasting kingness")
-  (future
-    (let [younger-nodes (first (split-cluster my-id))]
-      (vec (map
-             (fn [younger-node] (send-king my-id (:id younger-node)))
-             younger-nodes)))))
+  (let [younger-nodes (first (split-cluster my-id))]
+    (vec (map
+           (fn [younger-node] (future (send-king my-id (:id younger-node))))
+           younger-nodes))))
 
 ; State management
 (defn find-king! [knowledge]
@@ -109,10 +114,11 @@
 (defn dig-broadcast [received searchee]
   "Take result of broadcast and return ids of nodes, that replied with searchee"
   (->> received
-      (filter #(not= % :failure))
-      (map split-msg)
-      (filter (fn [[_ msg]] (= msg searchee)))
-      (map (fn [[id _]] id))))
+       (map deref)
+       (filter #(not= % :failure))
+       (map split-msg)
+       (filter (fn [[_ msg]] (= msg searchee)))
+       (map (fn [[id _]] id))))
 
 ; Meta description
 (defn ping [knowledge my-id]
@@ -156,6 +162,7 @@
 
 ; Receiving handler
 (defn transition [knowledge my-id in-msg]
+  (debug "Node" my-id ": Transition" in-msg @knowledge)
   (let [[sender-id msg] (split-msg in-msg)]
     (cond
       (= msg "PING") "PONG"
@@ -173,6 +180,7 @@
       (= msg "ALIVE?") (do
                          (change-state! knowledge :election)
                          "FINETHANKS")
+      (= msg "REPORT!") @knowledge
       :else "WAT?")))
 
 (defn receive-loop [knowledge my-id]
@@ -189,10 +197,10 @@
           (debug "Node" my-id ":" "Sending out" out-msg)
           (.send sock out-msg))
         (recur (.recvStr sock)))
-      (catch Exception e nil))))
+      (catch Exception e (debug "Node" my-id ": Caught exception" e)))))
 
 (defn node-march [id]
-  (let [knowledge (atom {:state :election :king nil}) ; Consider using ref for coordinated changes
+  (let [knowledge (atom {:state :election :king nil})
         inbound (future (receive-loop knowledge id))
         outbound (future (state-loop knowledge id))]
     (info "started node" id)
