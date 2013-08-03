@@ -101,8 +101,17 @@
            younger-nodes))))
 
 ; State management
-(defn find-king! [knowledge]
+(defn who-king? [knowledge]
   (:king @knowledge))
+
+(defn me-king? [knowledge]
+  (= :king (:state @knowledge)))
+
+(defn no-king? [knowledge]
+  (= :election (:state @knowledge)))
+
+(defn stability? [knowledge]
+  (= :stable (:state @knowledge)))
 
 (defn king-me! [knowledge]
   (reset! knowledge {:king nil :state :king}))
@@ -125,7 +134,7 @@
 ; Meta description
 (defn ping [knowledge my-id]
   (debug "Node" my-id ":" "PING")
-  (if-let [king-id (find-king! knowledge)]
+  (if-let [king-id (who-king? knowledge)]
     (let [response (ping-king my-id king-id)]
       (debug "Node" my-id ":" king-id "response is " response)
       (if (= response :failure)
@@ -147,17 +156,16 @@
           :else (debug "Node" my-id ":" "Election-cycle failed"))))
 
 (defn election [knowledge my-id]
-  (while (= :election (@knowledge :state))
+  (while (no-king? knowledge)
     (election-cycle knowledge my-id)))
 
 (defn state-loop [knowledge my-id]
   (while true
     (do
       (info "Node" my-id ":" @knowledge)
-      (let [state (:state @knowledge)]
-        (cond (= :election state) (election knowledge my-id)
-              (= :stable state) (ping knowledge my-id)
-              :else true)))
+      (cond (no-king? knowledge) (election knowledge my-id)
+            (stability? knowledge) (ping knowledge my-id)
+            :else true))
       (Thread/sleep T)))
 
 ; Receiving handler
@@ -170,7 +178,7 @@
                             (king-found! knowledge sender-id)
                             "OK")
       (and (= msg "ALIVE?")
-           (= :king (:state @knowledge))) "IMTHEKING"
+           (me-king? knowledge)) "IMTHEKING"
       (and (= msg "ALIVE?")
            (= my-id (dec (count cluster)))) (do
                                         (king-me! knowledge)
