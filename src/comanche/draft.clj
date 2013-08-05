@@ -135,9 +135,12 @@
     (if-let [ids (get-ids args)]
       (do
         (info "Starting nodes" ids)
-        (let [nodes (map launch-node ids)
-              waiting-for (second (first nodes))]
+        (let [nodes (map launch-node ids)]
           (doall nodes)
-          @waiting-for)) ; TODO wait for all the nodes
+          (while (not
+                   (every?
+                     (fn [[_ i _]] (future-done? i))
+                     nodes))
+            (Thread/sleep smoke/T))))
       (info "Usage: run with '-f' for full cluster emulation, with 'id1 id2 ... idk' for specific set of nodes, or with 'id1-idN' for a range of nodes. Ids should be between 0 and" (dec (count cluster)) ".")))
   (shutdown-agents))

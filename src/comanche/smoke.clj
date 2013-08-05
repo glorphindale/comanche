@@ -27,10 +27,15 @@
          (.setLinger sock timeout)
          (.connect sock target)
          (.send sock msg)
-         (String. (.recvStr sock)))
+         (if-let [raw (.recvStr sock)]
+           (String. raw)
+           (do
+             (error "Node" my-id ":" "Empty socket when sending " msg "to" target-id)
+             :failure)))
        (catch Exception e (do
                             (error "Node" my-id ":" "Exception when sending message " msg "to" target-id ":" e)
                             :failure))))))
+; Transport layer
 (defn make-msg [id msg]
   (str id ":" msg))
 
@@ -39,7 +44,6 @@
         out-id (Integer. id)]
     [out-id text]))
 
-; Transport layer
 (defn send-msg-and-expect
   ([cluster my-id target-id in-msg out-msg]
    (send-msg-and-expect cluster my-id target-id in-msg out-msg T))
@@ -93,11 +97,10 @@
        (map (fn [[id _]] id))))
 
 (defn receive-func [cluster my-id knowledge transition-func exit-func]
-  (let [location (get-in cluster [my-id :location])
-        sock (.socket ctx ZMQ/REP)]
-    (try
-      (debug "Node" my-id ":" "Starting receive-loop")
-      (.bind sock location)
+  (try
+    (debug "Node" my-id ":" "Starting receive-loop")
+    (with-open [sock (.socket ctx ZMQ/REP)]
+      (.bind sock (get-in cluster [my-id :location]))
       (.setSendTimeOut sock T)
       (.setLinger sock T)
       (loop [in-msg (.recvStr sock)]
@@ -107,6 +110,6 @@
           (debug "Node" my-id ":" "Sending out" out-msg)
           (.send sock out-msg))
         (if (not (exit-func knowledge))
-          (recur (.recvStr sock))))
-      (catch Exception e (debug "Node" my-id ": Caught exception" e)))))
+          (recur (.recvStr sock)))))
+    (catch Exception e (debug "Node" my-id ": Caught exception" e))))
 
