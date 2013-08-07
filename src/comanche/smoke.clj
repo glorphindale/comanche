@@ -58,6 +58,7 @@
                    :failure)))))
 
 (defn split-cluster [cluster pivot]
+  "Split cluster by pivot indes, return [younger nodes, older nodes] vector"
   [(subvec cluster 0 pivot) (subvec cluster (inc pivot))])
 
 (defn ping-king [cluster my-id king-id]
@@ -71,21 +72,21 @@
 (defn send-king [cluster my-id target-id]
   (send-msg-and-expect cluster my-id target-id "IMTHEKING" "OK"))
 
+(defn broadcast-msg [cluster my-id nodes msg]
+  "Send msg to nodes in a set of futures and return them"
+  (vec (map
+         (fn [node] (future (send-msg cluster my-id (:id node) (make-msg my-id msg))))
+         nodes)))
+
 (defn broadcast-alive [cluster my-id]
-  "Send ALIVE? requests in a futures and return them"
   (debug "Node" my-id ":" "Broadcast alive")
   (let [older-nodes (second (split-cluster cluster my-id))]
-    (vec (map
-         (fn [older-node] (future (send-alive cluster my-id (:id older-node))))
-         older-nodes))))
+    (broadcast-msg cluster my-id older-nodes "ALIVE?")))
 
 (defn broadcast-king [cluster my-id]
-  "Send IMTHEKING requests in a futures and return them"
   (debug "Node" my-id ":" "Broadcasting kingness")
   (let [younger-nodes (first (split-cluster cluster my-id))]
-    (vec (map
-           (fn [younger-node] (future (send-king cluster my-id (:id younger-node))))
-           younger-nodes))))
+    (broadcast-msg cluster my-id younger-nodes "IMTHEKING")))
 
 (defn dig-broadcast [received searchee]
   "Take result of broadcast and return ids of nodes, that replied with searchee"
