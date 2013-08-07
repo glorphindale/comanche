@@ -56,7 +56,7 @@
 (defn ping [knowledge my-id]
   (debug "Node" my-id ":" "PING")
   (if-let [king-id (who-king? knowledge)]
-    (let [response (smoke/ping-king cluster my-id king-id)]
+    (let [response (smoke/ping-king my-id (cluster king-id))]
       (debug "Node" my-id ":" king-id "response is " response)
       (if (= response :failure)
         (king-lost! knowledge)))))
@@ -108,7 +108,7 @@
       :else "WAT?")))
 
 (defn receive-loop [knowledge my-id]
-  (smoke/receive-func cluster my-id knowledge transition exit?))
+  (smoke/receive-func (cluster my-id) knowledge transition exit?))
 
 ; Glue them all
 (defn launch-node [id]
