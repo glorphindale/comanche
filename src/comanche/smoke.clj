@@ -72,11 +72,14 @@
 (defn send-king [cluster my-id target-id]
   (send-msg-and-expect cluster my-id target-id "IMTHEKING" "OK"))
 
-(defn broadcast-msg [cluster my-id nodes msg]
-  "Send msg to nodes in a set of futures and return them"
-  (vec (map
-         (fn [node] (future (send-msg cluster my-id (:id node) (make-msg my-id msg))))
-         nodes)))
+(defn broadcast-msg
+   "Send msg to nodes in a set of futures and return them"
+  ([cluster my-id nodes msg]
+   (broadcast-king cluster my-id nodes msg T))
+  ([cluster my-id nodes msg timeout]
+   (vec (map
+          (fn [node] (future (send-msg cluster my-id (:id node) (make-msg my-id msg) timeout)))
+          nodes))))
 
 (defn broadcast-alive [cluster my-id]
   (debug "Node" my-id ":" "Broadcast alive")
