@@ -88,6 +88,12 @@
   (let [younger-nodes (first (split-cluster cluster my-id))]
     (broadcast-msg cluster my-id younger-nodes "IMTHEKING")))
 
+(defn broadcast-exit [cluster my-id nodes]
+  (broadcast-msg cluster my-id nodes "EXIT!"))
+
+(defn broadcast-report [cluster my-id nodes]
+  (broadcast-msg cluster my-id nodes "REPORT!"))
+
 (defn dig-broadcast [received searchee]
   "Take result of broadcast and return ids of nodes, that replied with searchee"
   (->> received
