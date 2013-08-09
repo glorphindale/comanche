@@ -32,11 +32,12 @@
      (debug "Node" my-id ":" "Sending msg " msg " from " my-id " to " target-id ": " target)
      (try
        (with-open [sock (.socket ctx ZMQ/REQ)]
-         (.setReceiveTimeOut sock timeout)
-         (.setSendTimeOut sock timeout)
-         (.setLinger sock timeout)
-         (.connect sock target)
-         (.send sock msg)
+         (doto sock
+             (.setReceiveTimeOut timeout)
+             (.setSendTimeOut timeout)
+             (.setLinger timeout)
+             (.connect target)
+             (.send msg))
          (if-let [raw (.recvStr sock)]
            (String. raw)
            (do
@@ -107,9 +108,10 @@
     (try
       (debug "Node" id ":" "Starting receive-loop")
       (with-open [sock (.socket ctx ZMQ/REP)]
-        (.bind sock location)
-        (.setSendTimeOut sock T)
-        (.setLinger sock T)
+        (doto sock
+          (.bind location)
+          (.setSendTimeOut T)
+          (.setLinger T))
         (loop [in-msg (.recvStr sock)]
           (debug "Node" id ":" "Received" in-msg)
           (let [response (transition-func knowledge id in-msg)

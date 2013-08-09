@@ -1,4 +1,4 @@
-(defproject comanche "0.1.0"
+(defproject comanche "0.1.3"
   :description "Cluster leader election utility"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}

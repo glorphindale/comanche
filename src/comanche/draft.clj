@@ -3,7 +3,8 @@
              :refer (debug info error)]
             [clojure.edn :as edn]
             [clojure.string :as string]
-            [comanche.smoke :as smoke]))
+            [comanche.smoke :as smoke])
+  (:gen-class :main true))
 
 (timbre/set-config! [:appenders :spit :enabled?] true)
 (timbre/set-config! [:shared-appender-config :spit-filename] "logs.log")
@@ -46,8 +47,9 @@
 (defn king-me! [knowledge]
   (reset! knowledge {:king nil :state :king}))
 
-(defn king-found! [knowledge king-id]
-  (reset! knowledge {:king king-id :state :stable}))
+(defn king-found! [knowledge new-id]
+  ; TODO add check for older-id
+  (reset! knowledge {:king new-id :state :stable}))
 
 (defn king-lost! [knowledge]
   (reset! knowledge {:king nil :state :election}))
