@@ -48,7 +48,6 @@
   (reset! knowledge {:king nil :state :king}))
 
 (defn king-found! [knowledge new-id]
-  ; TODO add check for older-id
   (reset! knowledge {:king new-id :state :stable}))
 
 (defn king-lost! [knowledge]
@@ -69,7 +68,7 @@
           finethanks (smoke/dig-broadcast broadcast-results "FINETHANKS")
           imtheking (smoke/dig-broadcast broadcast-results "IMTHEKING")]
       (debug "Node" my-id ":" "Finethanks:" finethanks "imtheking:" imtheking)
-      (cond (not-empty imtheking) (king-found! knowledge (first imtheking))
+      (cond (not-empty imtheking) (king-found! knowledge (apply max imtheking))
             (empty? finethanks) (do
                                   (smoke/broadcast-king cluster my-id)
                                   (king-me! knowledge))
@@ -92,9 +91,13 @@
   (let [[sender-id msg] (smoke/split-msg in-msg)]
     (cond
       (= msg "PING") "PONG"
-      (= msg "IMTHEKING") (do
-                            (king-found! knowledge sender-id)
-                            "OK")
+      (= msg "IMTHEKING") (if (> sender-id my-id)
+                            (do
+                              (king-found! knowledge sender-id)
+                              "OK")
+                            (do
+                              (king-lost! knowledge)
+                              "NOTOK"))
       (and (= msg "ALIVE?")
            (me-king? knowledge)) "IMTHEKING"
       (and (= msg "ALIVE?")

@@ -91,8 +91,9 @@
 
 (defn broadcast-king [cluster my-id]
   (debug "Node" my-id ":" "Broadcasting kingness")
-  (let [younger-nodes (first (split-cluster cluster my-id))]
-    (broadcast-msg my-id younger-nodes "IMTHEKING")))
+  (let [[younger older] (split-cluster cluster my-id)
+        not-mes (into younger older)]
+    (broadcast-msg my-id not-mes "IMTHEKING")))
 
 (defn dig-broadcast [received searchee]
   "Take result of broadcast and return ids of nodes, that replied with searchee"
