@@ -73,13 +73,14 @@
                                   (smoke/broadcast-king cluster my-id)
                                   (king-me! knowledge))
             (not-empty finethanks) (do
+                                     (info "Node" my-id ": sleeping")
                                      (Thread/sleep smoke/T))
             :else (debug "Node" my-id ":" "Election-cycle failed")))))
 
 (defn state-loop [knowledge my-id]
   (while (not (exit? knowledge))
     (do
-      (info "Node" my-id ":" @knowledge)
+      (info "Node" my-id ": state" @knowledge)
       (cond (no-king? knowledge) (election knowledge my-id)
             (stability? knowledge) (ping knowledge my-id)
             :else true))

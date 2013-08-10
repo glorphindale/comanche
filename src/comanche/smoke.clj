@@ -17,9 +17,11 @@
   (str id ":" msg))
 
 (defn split-msg [msg]
-  (let [[id text] (string/split msg #":" 2)
-        out-id (Integer. id)]
-    [out-id text]))
+  (try
+      (let [[id text] (string/split msg #":" 2)
+          out-id (Integer. id)]
+      [out-id text])
+    (catch Exception e "-1::failure")))
 
 (defn send-msg
   "Connect to a specified node, send message and read a response.
