@@ -8,9 +8,9 @@
   "Split cluster by pivot indes, return [younger nodes, older nodes] vector"
   [(subvec cluster 0 pivot) (subvec cluster (inc pivot))])
 
-(defn ping-king [my-id king-node]
-  (debug "Node" my-id ":" "In ping king")
-  (smoke/send-msg-and-expect my-id king-node "PING" "PONG" (* 4 constants/TIMEOUT)))
+(defn send-ping [my-id target-node]
+  (debug "Node" my-id ":" "In ping")
+  (smoke/send-msg-and-expect my-id target-node "PING" "PONG" (* 4 constants/TIMEOUT)))
 
 (defn send-alive [my-id target-node]
   (debug "Node" my-id ":" "Send alive" my-id ":" (:id target-node))

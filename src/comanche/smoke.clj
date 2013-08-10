@@ -46,6 +46,7 @@
                             (error "Node" my-id ":" "Exception when sending message " msg "to" target-id ":" e)
                             (make-msg target-id :failure)))))))
 (defn send-msg-and-expect
+  "Send message to the target node, return :ok if response matches expectation, :failure otherwise"
   ([my-id target-node in-msg out-msg]
    (send-msg-and-expect my-id target-node in-msg out-msg constants/TIMEOUT))
   ([my-id target-node in-msg out-msg timeout]
@@ -59,6 +60,9 @@
                    :failure)))))
 
 (defn receive-func [my-node knowledge transition-func exit-func]
+  "Bind to the (:location my-node) socket, start processing incoming messages.
+  For every incoming message return the (transition-func knowledge my-id in-msg) result.
+  Stop the cycle when (exit-func @knowledge) becomes true."
   (let [{:keys [id location]} my-node]
     (try
       (debug "Node" id ":" "Starting receive-loop")

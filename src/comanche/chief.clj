@@ -59,7 +59,7 @@
 (defn ping [knowledge my-id]
   (debug "Node" my-id ":" "PING")
   (if-let [king-id (who-king? knowledge)]
-    (let [response (signals/ping-king my-id (cluster king-id))]
+    (let [response (signals/send-ping my-id (cluster king-id))]
       (debug "Node" my-id ":" king-id "response is " response)
       (if (= response :failure)
         (king-lost! knowledge)))))
