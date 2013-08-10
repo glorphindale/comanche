@@ -1,9 +1,11 @@
-(ns comanche.draft
+(ns comanche.chief
   (:require [taoensso.timbre :as timbre
              :refer (debug info error)]
             [clojure.edn :as edn]
             [clojure.string :as string]
-            [comanche.smoke :as smoke])
+            [comanche.smoke :as smoke]
+            [comanche.signals :as signals]
+            [comanche.constants :as constants])
   (:gen-class :main true))
 
 (timbre/set-config! [:appenders :spit :enabled?] true)
@@ -57,24 +59,24 @@
 (defn ping [knowledge my-id]
   (debug "Node" my-id ":" "PING")
   (if-let [king-id (who-king? knowledge)]
-    (let [response (smoke/ping-king my-id (cluster king-id))]
+    (let [response (signals/ping-king my-id (cluster king-id))]
       (debug "Node" my-id ":" king-id "response is " response)
       (if (= response :failure)
         (king-lost! knowledge)))))
 
 (defn election [knowledge my-id]
   (while (no-king? knowledge)
-    (let [broadcast-results (smoke/broadcast-alive cluster my-id)
-          finethanks (smoke/dig-broadcast broadcast-results "FINETHANKS")
-          imtheking (smoke/dig-broadcast broadcast-results "IMTHEKING")]
+    (let [broadcast-results (signals/broadcast-alive cluster my-id)
+          finethanks (signals/dig-broadcast broadcast-results "FINETHANKS")
+          imtheking (signals/dig-broadcast broadcast-results "IMTHEKING")]
       (debug "Node" my-id ":" "Finethanks:" finethanks "imtheking:" imtheking)
       (cond (not-empty imtheking) (king-found! knowledge (apply max imtheking))
             (empty? finethanks) (do
-                                  (smoke/broadcast-king cluster my-id)
+                                  (signals/broadcast-king cluster my-id)
                                   (king-me! knowledge))
             (not-empty finethanks) (do
-                                     (info "Node" my-id ": sleeping")
-                                     (Thread/sleep smoke/T))
+                                     (debug "Node" my-id ": sleeping, waiting for the IMTHEKING")
+                                     (Thread/sleep constants/TIMEOUT))
             :else (debug "Node" my-id ":" "Election-cycle failed")))))
 
 (defn state-loop [knowledge my-id]
@@ -84,7 +86,7 @@
       (cond (no-king? knowledge) (election knowledge my-id)
             (stability? knowledge) (ping knowledge my-id)
             :else true))
-      (Thread/sleep smoke/T)))
+      (Thread/sleep constants/TIMEOUT)))
 
 ; Receiving handler
 (defn transition [knowledge my-id in-msg]
@@ -104,7 +106,7 @@
       (and (= msg "ALIVE?")
            (= my-id (dec (count cluster)))) (do
                                         (king-me! knowledge)
-                                        (smoke/broadcast-king cluster my-id)
+                                        (signals/broadcast-king cluster my-id)
                                         "IMTHEKING")
       (= msg "ALIVE?") (do
                          (king-lost! knowledge)
@@ -147,7 +149,7 @@
                    (every?
                      (fn [[_ i _]] (future-done? i))
                      nodes))
-            (Thread/sleep smoke/T))))
+            (Thread/sleep constants/TIMEOUT))))
       (info "Usage: run with '-f' for full cluster emulation, with 'id1 id2 ... idk' for specific set of nodes, or with 'id1-idN' for a range of nodes. Ids should be between 0 and" (dec (count cluster)) ".")))
   (smoke/stop-zmq)
   (shutdown-agents))

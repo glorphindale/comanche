@@ -2,17 +2,14 @@
   (:require [taoensso.timbre :as timbre
              :refer (debug info error)]
             [clojure.string :as string]
-            [clojure.edn :as edn])
+            [comanche.constants :as constants])
   (:import [org.jeromq ZMQ]))
-
-(def T 4000)
 
 (def ctx (ZMQ/context 1))
 
 (defn stop-zmq []
   (.term ctx))
 
-; Transmission layer
 (defn make-msg [id msg]
   (str id ":" msg))
 
@@ -27,7 +24,7 @@
   "Connect to a specified node, send message and read a response.
   Msg must be in a number:message format"
   ([my-id target-node msg]
-   (send-msg my-id target-node msg T))
+   (send-msg my-id target-node msg constants/TIMEOUT))
   ([my-id target-node msg timeout]
    (let [target-id (:id target-node)
          target (:location target-node)]
@@ -48,10 +45,9 @@
        (catch Exception e (do
                             (error "Node" my-id ":" "Exception when sending message " msg "to" target-id ":" e)
                             (make-msg target-id :failure)))))))
-; Transport layer
 (defn send-msg-and-expect
   ([my-id target-node in-msg out-msg]
-   (send-msg-and-expect my-id target-node in-msg out-msg T))
+   (send-msg-and-expect my-id target-node in-msg out-msg constants/TIMEOUT))
   ([my-id target-node in-msg out-msg timeout]
    (debug "Node" my-id ":" "send-msg-and-expect")
    (let [msg (make-msg my-id in-msg)
@@ -62,50 +58,6 @@
                    (info "Node" my-id ": Received" response "when waiting for" exp-msg)
                    :failure)))))
 
-(defn split-cluster [cluster pivot]
-  "Split cluster by pivot indes, return [younger nodes, older nodes] vector"
-  [(subvec cluster 0 pivot) (subvec cluster (inc pivot))])
-
-(defn ping-king [my-id king-node]
-  (debug "Node" my-id ":" "In ping king")
-  (send-msg-and-expect my-id king-node "PING" "PONG" (* 4 T)))
-
-(defn send-alive [my-id target-node]
-  (debug "Node" my-id ":" "Send alive" my-id ":" (:id target-node))
-  (send-msg my-id target-node (make-msg my-id "ALIVE?")))
-
-(defn send-king [my-id target-node]
-  (send-msg-and-expect my-id target-node "IMTHEKING" "OK"))
-
-(defn broadcast-msg
-   "Send msg to nodes in a set of futures and return them"
-  ([my-id nodes msg]
-   (broadcast-msg my-id nodes msg T))
-  ([my-id nodes msg timeout]
-   (vec (map
-          (fn [node] (future (send-msg my-id node (make-msg my-id msg) timeout)))
-          nodes))))
-
-(defn broadcast-alive [cluster my-id]
-  (debug "Node" my-id ":" "Broadcast alive")
-  (let [older-nodes (second (split-cluster cluster my-id))]
-    (broadcast-msg my-id older-nodes "ALIVE?")))
-
-(defn broadcast-king [cluster my-id]
-  (debug "Node" my-id ":" "Broadcasting kingness")
-  (let [[younger older] (split-cluster cluster my-id)
-        not-mes (into younger older)]
-    (broadcast-msg my-id not-mes "IMTHEKING")))
-
-(defn dig-broadcast [received searchee]
-  "Take result of broadcast and return ids of nodes, that replied with searchee"
-  (->> received
-       (map deref)
-       (filter #(not= % :failure))
-       (map split-msg)
-       (filter (fn [[_ msg]] (= msg searchee)))
-       (map (fn [[id _]] id))))
-
 (defn receive-func [my-node knowledge transition-func exit-func]
   (let [{:keys [id location]} my-node]
     (try
@@ -113,8 +65,8 @@
       (with-open [sock (.socket ctx ZMQ/REP)]
         (doto sock
           (.bind location)
-          (.setSendTimeOut T)
-          (.setLinger T))
+          (.setSendTimeOut constants/TIMEOUT)
+          (.setLinger constants/TIMEOUT))
         (loop [in-msg (.recvStr sock)]
           (debug "Node" id ":" "Received" in-msg)
           (let [response (transition-func knowledge id in-msg)
@@ -125,24 +77,3 @@
             (recur (.recvStr sock)))))
       (catch Exception e (debug "Node" id ": Caught exception" e)))))
 
-; Helper functions
-(defn broadcast-exit [my-id nodes]
-  (broadcast-msg my-id nodes "EXIT!"))
-
-(defn broadcast-report [my-id nodes]
-  (broadcast-msg my-id nodes "REPORT!"))
-
-(defn dig-report [broadcast]
-  "Take result of broadcast-report and return a map of results"
-  (->> broadcast
-       (map deref)
-       (map split-msg)
-       (map (fn [[id resp]] [id (edn/read-string resp)]))
-       (into {})))
-
-(defn cluster-status [cluster]
-  "Take a cluster and return what different nodes think of the cluster status"
-  (let [raw (broadcast-report -1 cluster)]
-    (Thread/sleep T)
-    (let [output (dig-report raw)]
-      (frequencies (vals output)))))
