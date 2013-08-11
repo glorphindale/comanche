@@ -25,7 +25,11 @@
 
 ;
 (def cluster
-  (edn/read-string (slurp "cluster.conf")))
+  (try
+    (edn/read-string (slurp "cluster.conf"))
+    (catch java.io.FileNotFoundException _ (do
+                                     (error "Please provide configuration file cluster.conf")
+                                     (System/exit 1)))))
 
 ; State management
 (defn who-king? [knowledge]
