@@ -1,6 +1,6 @@
 # comanche (en)
 
-Bully algorithm - algorithm for cluster leader election, see ["Bully algorithm"|http://en.wikipedia.org/wiki/Bully_algorithm].
+Bully algorithm - algorithm for cluster leader election, see ["Bully algorithm"](http://en.wikipedia.org/wiki/Bully_algorithm).
 Implemented in Clojure using zeromq as a transport layer.
 
 Bully algorithm does not handle split-brain problems in any way, use in production at your own risk.
@@ -8,7 +8,7 @@ Bully algorithm does not handle split-brain problems in any way, use in producti
 # comanche (ru)
 
 Племени команчей нужен новый вождь.
-Реализация алгоритма задиры [Bully algorithm|http://en.wikipedia.org/wiki/Bully_algorithm] на 
+Реализация алгоритма задиры [Bully algorithm](http://en.wikipedia.org/wiki/Bully_algorithm) на 
 Clojure с использованием zeromq.
 Алгортим задиры не является надёжным средством выбора лидера в кластере, и не защищает от ошибок
 split-brain. За последствия использования в продакшне команчи ответственности не несут!
